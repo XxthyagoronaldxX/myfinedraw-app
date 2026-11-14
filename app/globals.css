@@ -1,0 +1,187 @@
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+/* o variant dark: do Tailwind/shadcn segue o tema escolhido (data-theme), não só o do sistema */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * Identidade MyFineDraw — "papel de desenho técnico":
+ * claro = papel creme com tinta nanquim; escuro = prancheta noturna (blueprint).
+ * Acento: vermelhão de lápis de revisão.
+ */
+:root {
+  --mfd-bg: #f6f2ea;
+  --mfd-canvas: #fbf8f2;
+  --mfd-surface: #fffdf9;
+  --mfd-surface-2: #f0ebe1;
+  --mfd-line: #e3dccd;
+  --mfd-line-strong: #cfc6b3;
+  --mfd-ink: #1d2233;
+  --mfd-ink-soft: #3d4459;
+  --mfd-muted: #8a8473;
+  --mfd-brand: #ec4f2b;
+  --mfd-brand-hover: #d6401e;
+  --mfd-brand-soft: #fde6dd;
+  --mfd-brand-ink: #b8361a;
+  --mfd-blue: #2f5bd3;
+  --mfd-dot: #d6ccb8;
+  --mfd-shadow: 0 1px 2px rgb(29 34 51 / 0.06), 0 8px 24px -12px rgb(29 34 51 / 0.18);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --mfd-bg: #0c1220;
+  --mfd-canvas: #0f1729;
+  --mfd-surface: #141d31;
+  --mfd-surface-2: #1b2640;
+  --mfd-line: #24314f;
+  --mfd-line-strong: #33436a;
+  --mfd-ink: #e8ecf7;
+  --mfd-ink-soft: #c2c9dc;
+  --mfd-muted: #7d89a8;
+  --mfd-brand: #ff6a45;
+  --mfd-brand-hover: #ff8463;
+  --mfd-brand-soft: #3a1f1d;
+  --mfd-brand-ink: #ffa48c;
+  --mfd-blue: #7aa2ff;
+  --mfd-dot: #23314f;
+  --mfd-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--mfd-bg);
+  --color-canvas: var(--mfd-canvas);
+  --color-surface: var(--mfd-surface);
+  --color-surface-2: var(--mfd-surface-2);
+  --color-line: var(--mfd-line);
+  --color-line-strong: var(--mfd-line-strong);
+  --color-ink: var(--mfd-ink);
+  --color-ink-soft: var(--mfd-ink-soft);
+  --color-muted: var(--mfd-muted);
+  --color-brand: var(--mfd-brand);
+  --color-brand-hover: var(--mfd-brand-hover);
+  --color-brand-soft: var(--mfd-brand-soft);
+  --color-brand-ink: var(--mfd-brand-ink);
+  --color-blue: var(--mfd-blue);
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-face), var(--font-body), sans-serif;
+  --font-mono: var(--font-code), ui-monospace, monospace;
+  --shadow-soft: var(--mfd-shadow);
+
+  /* tokens do shadcn/ui apontando para a paleta MyFineDraw */
+  --color-background: var(--mfd-surface);
+  --color-foreground: var(--mfd-ink);
+  --color-popover: var(--mfd-surface);
+  --color-popover-foreground: var(--mfd-ink);
+  --color-primary: var(--mfd-brand);
+  --color-primary-foreground: #ffffff;
+  --color-accent: var(--mfd-surface-2);
+  --color-accent-foreground: var(--mfd-ink);
+  --color-muted-foreground: var(--mfd-muted);
+  --color-destructive: #dc2626;
+  --color-border: var(--mfd-line);
+  --color-input: var(--mfd-line-strong);
+  --color-ring: var(--mfd-brand);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--mfd-bg);
+  color: var(--mfd-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--mfd-brand-soft);
+  color: var(--mfd-brand-ink);
+}
+
+/* Fundo de papel milimetrado usado nas telas fora do editor */
+.paper {
+  background-color: var(--mfd-bg);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--mfd-line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--mfd-line) 55%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+.btn {
+  @apply inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft transition hover:border-line-strong hover:bg-surface-2 disabled:opacity-50;
+}
+.btn-primary {
+  @apply inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50;
+}
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-ink-soft transition hover:bg-surface-2;
+}
+.tool {
+  @apply flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg px-2 text-sm text-ink-soft transition hover:bg-surface-2 hover:text-ink;
+}
+.eyebrow {
+  @apply font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted;
+}
+
+/* Markdown dentro das notas */
+.md h1 { @apply mb-1 font-display text-lg font-bold; }
+.md h2 { @apply mb-1 font-display text-base font-bold; }
+.md h3 { @apply font-semibold; }
+.md ul { @apply list-disc pl-5; }
+.md ol { @apply list-decimal pl-5; }
+.md code { @apply rounded bg-surface-2 px-1 font-mono text-xs; }
+.md pre { @apply overflow-auto rounded bg-[#1d2233] p-2 text-xs text-[#e8ecf7]; }
+.md pre code { @apply bg-transparent p-0 text-inherit; }
+.md a { @apply text-brand underline; }
+.md p { @apply mb-1; }
+.md input[type='checkbox'] { @apply mr-1 accent-[var(--mfd-brand)]; }
+
+/* React Flow */
+.react-flow {
+  --xy-background-color: var(--mfd-canvas);
+  --xy-edge-stroke: var(--mfd-ink-soft);
+  --xy-edge-stroke-selected: var(--mfd-brand);
+  --xy-connectionline-stroke: var(--mfd-brand);
+  --xy-selection-background-color: color-mix(in srgb, var(--mfd-brand) 8%, transparent);
+  --xy-selection-border: 1px dashed var(--mfd-brand);
+  --xy-resize-background-color: var(--mfd-brand);
+  --xy-edge-label-background-color: var(--mfd-surface);
+  --xy-edge-label-color: var(--mfd-ink);
+}
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  background: var(--mfd-brand);
+  border: 2px solid var(--mfd-surface);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow.connecting .react-flow__handle {
+  opacity: 1;
+}
+.react-flow__edge-textbg {
+  fill: var(--mfd-surface);
+}
+.react-flow__edge-text {
+  fill: var(--mfd-ink);
+  font-size: 12px;
+}
+.react-flow__node-group {
+  background: color-mix(in srgb, var(--mfd-brand) 5%, transparent) !important;
+  border: 1.5px dashed var(--mfd-line-strong) !important;
+  border-radius: 12px !important;
+}
+
+/* barra de rolagem discreta */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--mfd-line-strong) transparent;
+}
