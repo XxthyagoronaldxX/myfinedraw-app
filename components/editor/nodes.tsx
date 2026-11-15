@@ -1,7 +1,7 @@
 'use client';
 
 import { Handle, NodeProps, NodeResizer, Position } from '@xyflow/react';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { assetUrl } from '@/lib/api';
@@ -20,7 +20,11 @@ function SideHandles() {
   );
 }
 
-/** Texto editável com duplo clique. */
+/**
+ * Texto editável com duplo clique.
+ * Ao editar, o contêiner continua o mesmo (mesma centralização, cor e fonte) e
+ * recebe um textarea transparente que cresce com o texto — o bloco não muda de visual.
+ */
 function EditableText({
   value,
   onCommit,
@@ -45,6 +49,14 @@ function EditableText({
     }
   }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // altura acompanha o conteúdo, para o texto continuar centralizado como na leitura
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = '0px';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editing, draft]);
+
   const commit = () => {
     setEditing(false);
     if (draft !== value) onCommit(draft);
@@ -52,22 +64,28 @@ function EditableText({
 
   if (editing)
     return (
-      <textarea
-        ref={ref}
-        className={`nodrag nowheel resize-none bg-surface outline-none ${className ?? ''}`}
-        style={style}
-        value={draft}
-        rows={multiline ? undefined : 1}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') setEditing(false);
-          if (e.key === 'Enter' && (!multiline || e.ctrlKey)) {
-            e.preventDefault();
-            commit();
-          }
-        }}
-      />
+      <div className={className} style={style}>
+        <textarea
+          ref={ref}
+          rows={1}
+          aria-label="Editar texto"
+          className="nodrag nowheel m-0 block w-full resize-none overflow-hidden border-0 bg-transparent p-0 outline-none"
+          style={{ color: 'inherit', font: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', letterSpacing: 'inherit', caretColor: 'currentColor' }}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setEditing(false);
+            }
+            if (e.key === 'Enter' && (!multiline || e.ctrlKey)) {
+              e.preventDefault();
+              commit();
+            }
+          }}
+        />
+      </div>
     );
   return (
     <div className={className} style={style} onDoubleClick={() => setEditing(true)}>
@@ -102,27 +120,62 @@ function shapePath(shape: FlowShape, w: number, h: number): React.ReactElement |
           <line x1={w - 12} y1={1} x2={w - 12} y2={h - 1} />
         </g>
       );
+    case 'usecase':
+      return <ellipse cx={w / 2} cy={h / 2} rx={w / 2 - 1} ry={h / 2 - 1} {...props} />;
+    case 'actor': {
+      // boneco UML: o desenho ocupa a parte de cima; o nome fica embaixo (ACTOR_LABEL_H)
+      const fh = Math.max(20, h - ACTOR_LABEL_H);
+      const cx = w / 2;
+      const r = Math.min(w * 0.18, fh * 0.13);
+      const headY = r + 2;
+      const neck = headY + r;
+      const hip = neck + fh * 0.38;
+      const span = Math.min(w * 0.42, fh * 0.32);
+      return (
+        <g {...props} strokeLinecap="round" strokeLinejoin="round">
+          <circle cx={cx} cy={headY} r={r} />
+          <path d={`M${cx},${neck} V${hip} M${cx - span},${neck + fh * 0.13} H${cx + span} M${cx},${hip} L${cx - span * 0.8},${fh - 2} M${cx},${hip} L${cx + span * 0.8},${fh - 2}`} fill="none" />
+        </g>
+      );
+    }
     default:
       return null;
   }
 }
+
+/** Altura reservada para o nome embaixo do boneco do ator UML. */
+const ACTOR_LABEL_H = 26;
 
 export const FlowNode = memo(function FlowNode({ id, data, selected, width, height }: NodeProps) {
   const updateNodeData = useBoard((s) => s.updateNodeData);
   const d = data as any;
   const w = width ?? 160;
   const h = height ?? 64;
+  const actor = d.shape === 'actor';
+  // cor vazia = cor de texto do tema (formas cujo texto/traço fica sobre o canvas)
+  const ink = 'var(--mfd-ink)';
+  const pad = d.shape === 'subprocess' ? 'px-5' : d.shape === 'decision' ? 'px-6' : d.shape === 'usecase' ? 'px-7' : 'px-3';
   return (
     <div className="relative h-full w-full">
-      <NodeResizer isVisible={selected} minWidth={60} minHeight={30} lineClassName="!border-brand" handleClassName="!h-2 !w-2 !bg-surface !border-brand" />
-      <svg className="absolute inset-0 overflow-visible" width={w} height={h} fill={d.fill} stroke={d.stroke}>
+      <NodeResizer
+        isVisible={selected}
+        minWidth={actor ? 40 : 60}
+        minHeight={actor ? 70 : 30}
+        lineClassName="!border-brand"
+        handleClassName="!h-2 !w-2 !bg-surface !border-brand"
+      />
+      <svg className="absolute inset-0 overflow-visible" width={w} height={h} fill={d.fill || 'transparent'} stroke={d.stroke || ink}>
         {shapePath(d.shape, w, h)}
       </svg>
       <EditableText
         value={d.label}
         onCommit={(label) => updateNodeData(id, { label })}
-        className={`absolute inset-0 flex items-center justify-center whitespace-pre-wrap text-center leading-tight ${d.shape === 'subprocess' ? 'px-5' : d.shape === 'decision' ? 'px-6' : 'px-3'}`}
-        style={{ color: d.color, fontSize: d.fontSize, width: w, height: h }}
+        className={
+          actor
+            ? 'absolute inset-x-0 bottom-0 flex items-center justify-center whitespace-pre-wrap text-center leading-tight'
+            : `absolute inset-0 flex items-center justify-center whitespace-pre-wrap text-center leading-tight ${pad}`
+        }
+        style={{ color: d.color || ink, fontSize: d.fontSize, width: w, height: actor ? ACTOR_LABEL_H : h }}
       />
       <SideHandles />
     </div>
@@ -182,7 +235,7 @@ export const MarkdownNode = memo(function MarkdownNode({ id, data, selected }: N
       {editing ? (
         <textarea
           autoFocus
-          className="nodrag nowheel h-full w-full resize-none p-3 font-mono text-xs outline-none"
+          className="nodrag nowheel block h-full w-full resize-none border-0 bg-transparent p-3 font-mono text-xs text-ink outline-none"
           defaultValue={d.text}
           onBlur={(e) => {
             setEditing(false);

@@ -35,6 +35,14 @@ interface BoardState {
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (c: Connection) => void;
+  /** Nova linha solta em qualquer ponto da borda do bloco de destino. */
+  connectAnchored: (c: {
+    source: string;
+    sourceHandle: string | null;
+    target: string;
+    targetHandle: string | null;
+    targetAnchor: { x: number; y: number };
+  }) => void;
   /** Arrastar a ponta de uma linha para outro ponto de conexão. */
   onReconnect: (oldEdge: Edge, c: Connection) => void;
   setEdgeType: (t: string) => void;
@@ -99,8 +107,31 @@ export const useBoard = create<BoardState>((set, get) => ({
     const isEr = src?.type === 'erTable' && tgt?.type === 'erTable';
     const edge: Edge = isEr
       ? { ...c, id: crypto.randomUUID(), type: 'erRelation', data: { cardinality: 'N:1' } }
-      : { ...c, id: crypto.randomUUID(), type: edgeType, markerEnd: { type: 'arrowclosed' as any }, data: {} };
-    set((s) => ({ edges: addEdge(edge, s.edges), version: s.version + 1 }));
+      : { ...c, id: crypto.randomUUID(), type: 'flex', data: { lineType: edgeType, endMarker: 'arrow' } };
+    // como no Lucidchart, a linha recém-criada já vem selecionada
+    set((s) => ({
+      nodes: s.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+      edges: addEdge({ ...edge, selected: true }, s.edges.map((e) => (e.selected ? { ...e, selected: false } : e))),
+      version: s.version + 1,
+    }));
+  },
+
+  connectAnchored: ({ source, sourceHandle, target, targetHandle, targetAnchor }) => {
+    get().record(true);
+    const edge: Edge = {
+      id: crypto.randomUUID(),
+      type: 'flex',
+      source,
+      sourceHandle,
+      target,
+      targetHandle,
+      data: { lineType: get().edgeType, endMarker: 'arrow', targetAnchor },
+    };
+    set((s) => ({
+      nodes: s.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+      edges: [...s.edges.map((e) => (e.selected ? { ...e, selected: false } : e)), { ...edge, selected: true }],
+      version: s.version + 1,
+    }));
   },
 
   onReconnect: (oldEdge, c) => {

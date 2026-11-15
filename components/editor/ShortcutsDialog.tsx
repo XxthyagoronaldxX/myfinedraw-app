@@ -21,8 +21,9 @@ const GROUPS: { title: string; items: [string[], string][] }[] = [
     items: [
       [['Ctrl', 'Z'], 'Desfazer'],
       [['Ctrl', 'Y'], 'Refazer (ou Ctrl+Shift+Z)'],
-      [['Ctrl', 'C'], 'Copiar seleção'],
-      [['Ctrl', 'V'], 'Colar seleção copiada'],
+      [['Ctrl', 'C'], 'Copiar seleção (vale entre boards e abas)'],
+      [['Ctrl', 'X'], 'Recortar seleção'],
+      [['Ctrl', 'V'], 'Colar onde está o mouse'],
       [['Ctrl', 'D'], 'Duplicar seleção'],
       [['Ctrl', 'A'], 'Selecionar tudo'],
       [['Ctrl', 'G'], 'Agrupar'],

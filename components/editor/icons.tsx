@@ -56,4 +56,11 @@ export const Magnet = () => (
     <path d="M10 3v8a2 2 0 0 0 4 0V3" />
   </S>
 );
-export const Plus =() => <S width={16} height={16}><path d="M12 5v14M5 12h14" /></S>;
+export const Actor = () => (
+  <S>
+    <circle cx="12" cy="5" r="2.6" />
+    <path d="M12 7.6V14M6.5 10h11M12 14l-4 6.5M12 14l4 6.5" />
+  </S>
+);
+export const UseCase = () => <S><ellipse cx="12" cy="12" rx="9.5" ry="5.5" /></S>;
+export const Plus = () =><S width={16} height={16}><path d="M12 5v14M5 12h14" /></S>;

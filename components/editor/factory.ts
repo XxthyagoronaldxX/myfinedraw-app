@@ -1,6 +1,9 @@
 import type { Node, XYPosition } from '@xyflow/react';
 
-export type FlowShape = 'terminal' | 'process' | 'decision' | 'io' | 'document' | 'subprocess' | 'text';
+export type FlowShape = 'terminal' | 'process' | 'decision' | 'io' | 'document' | 'subprocess' | 'text' | 'actor' | 'usecase';
+
+/** Formas cujo texto fica fora do desenho, direto sobre o canvas: usam a cor de texto do tema. */
+export const TEXT_ON_CANVAS: FlowShape[] = ['text', 'actor'];
 
 export interface ErColumn {
   id: string;
@@ -33,6 +36,18 @@ const FLOW_SIZES: Record<FlowShape, { width: number; height: number; label: stri
   document: { width: 160, height: 76, label: 'Documento' },
   subprocess: { width: 170, height: 64, label: 'Subprocesso' },
   text: { width: 160, height: 40, label: 'Texto' },
+  // UML
+  actor: { width: 90, height: 130, label: 'Ator' },
+  usecase: { width: 180, height: 76, label: 'Caso de uso' },
+};
+
+/** Cores padrão por forma (string vazia = cor do tema, ajusta ao claro/escuro). */
+const FLOW_COLORS: Partial<Record<FlowShape, { fill: string; stroke: string; color: string }>> = {
+  text: { fill: 'transparent', stroke: 'transparent', color: '' },
+  actor: { fill: 'transparent', stroke: '', color: '' },
+  decision: { fill: '#FEF3C7', stroke: '#D97706', color: '#18181b' },
+  terminal: { fill: '#DCFCE7', stroke: '#16A34A', color: '#18181b' },
+  usecase: { fill: '#FCE7F3', stroke: '#DB2777', color: '#18181b' },
 };
 
 export function createFlowNode(shape: FlowShape, center: XYPosition): Node {
@@ -46,9 +61,7 @@ export function createFlowNode(shape: FlowShape, center: XYPosition): Node {
     data: {
       shape,
       label: s.label,
-      fill: shape === 'text' ? 'transparent' : shape === 'decision' ? '#FEF3C7' : shape === 'terminal' ? '#DCFCE7' : '#E0E7FF',
-      stroke: shape === 'text' ? 'transparent' : shape === 'decision' ? '#D97706' : shape === 'terminal' ? '#16A34A' : '#4F46E5',
-      color: '#18181b',
+      ...(FLOW_COLORS[shape] ?? { fill: '#E0E7FF', stroke: '#4F46E5', color: '#18181b' }),
       fontSize: 14,
     },
   };

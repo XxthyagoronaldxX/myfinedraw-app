@@ -17,7 +17,7 @@ import {
 } from '@xyflow/react';
 import { toPng, toSvg } from 'html-to-image';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, Asset, Board, BoardSummary, uploadImage } from '@/lib/api';
 import { ThemeToggle, useTheme } from '@/lib/theme';
 import Logo from '../Logo';
@@ -25,6 +25,7 @@ import * as I from './icons';
 import CanvasMenu, { MenuTarget } from './CanvasMenu';
 import ShortcutsDialog from './ShortcutsDialog';
 import { GuideLines, Guides, snapToNodes } from './snap';
+import { handleFor, projectAnchor } from './edgeGeometry';
 import { Textarea } from '@/components/ui/textarea';
 import { edgeTypes, ErMarkers } from './edges';
 import {
@@ -44,6 +45,9 @@ import { serialize, useBoard } from './store';
 
 type SaveState ='saved' | 'pending' | 'saving' | 'error' | 'conflict';
 
+/** Prefixo do conteúdo copiado na área de transferência do sistema (texto JSON). */
+const MFD_CLIPBOARD = 'MYFINEDRAW_CLIPBOARD_V1:';
+
 export default function Editor(props: { projectId: string; boardId: string }) {
   return (
     <ReactFlowProvider>
@@ -60,7 +64,9 @@ function download(name: string, href: string) {
 }
 
 const isTyping = (t: EventTarget | null) =>
-  t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  t instanceof HTMLElement &&
+  t.dataset.mfdClipboard === undefined && // o campo oculto do copiar/colar não conta como digitação
+  (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
 
 function imageSize(file: File): Promise<{ w: number; h: number } | undefined> {
   return new Promise((resolve) => {
@@ -89,6 +95,11 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
   const [helpOpen, setHelpOpen] = useState(false);
   const [dropHint, setDropHint] = useState(false);
   const hasSelection = nodes.some((n) => n.selected) || edges.some((e) => e.selected);
+  // linhas livres têm alças próprias nas pontas; o "reconnect" do React Flow fica só para as ER
+  const displayEdges = useMemo(
+    () => edges.map((e) => (e.type === 'erRelation' || e.reconnectable === false ? e : { ...e, reconnectable: false })),
+    [edges],
+  );
   const [guides, setGuides] = useState<Guides>({});
 
   // lembra a preferência de alinhamento entre sessões
@@ -246,30 +257,78 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
   );
 
   /* ---------- copiar / colar / agrupar ---------- */
-  const copy = useCallback(() => {
+  /** Última posição do mouse sobre o canvas (coordenadas de tela), usada para colar no lugar certo. */
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  /** Onde o menu de botão direito foi aberto (o "Colar" do menu cola ali). */
+  const menuPoint = useRef<{ x: number; y: number } | null>(null);
+  /** Campo oculto que recebe o foco no Ctrl+C/V para o navegador disparar copy/paste nativos. */
+  const clipboardField = useRef<HTMLTextAreaElement>(null);
+
+  /** Copia a seleção para a memória; devolve o texto para a área de transferência (ou false). */
+  const copy = useCallback((writeSystemClipboard = true): string | false => {
     const { nodes, edges } = useBoard.getState();
     const sel = nodes.filter((n) => n.selected);
     if (!sel.length) return false;
     const ids = new Set(sel.map((n) => n.id));
     // inclui filhos de grupos selecionados
     nodes.forEach((n) => n.parentId && ids.has(n.parentId) && !ids.has(n.id) && (sel.push(n), ids.add(n.id)));
-    clipboard.current = { nodes: structuredClone(sel), edges: structuredClone(edges.filter((e) => ids.has(e.source) && ids.has(e.target))) };
-    return true;
+    const clip = {
+      nodes: structuredClone(sel).map((n) => ({ ...n, selected: false })),
+      edges: structuredClone(edges.filter((e) => ids.has(e.source) && ids.has(e.target))).map((e) => ({ ...e, selected: false })),
+    };
+    clipboard.current = clip;
+    const payload = MFD_CLIPBOARD + JSON.stringify(clip);
+    // fora do atalho de teclado (ex.: menu "Copiar"), grava pela API assíncrona
+    if (writeSystemClipboard) navigator.clipboard?.writeText(payload).catch(() => undefined);
+    return payload;
   }, []);
 
-  const paste = useCallback(() => {
-    const clip = clipboard.current;
-    if (!clip) return;
-    const map = new Map(clip.nodes.map((n) => [n.id, crypto.randomUUID()]));
-    const nodes = clip.nodes.map((n) => ({
-      ...structuredClone(n),
-      id: map.get(n.id)!,
-      parentId: n.parentId ? map.get(n.parentId) ?? undefined : undefined,
-      position: n.parentId && map.has(n.parentId) ? n.position : { x: n.position.x + 30, y: n.position.y + 30 },
-    }));
-    const edges = clip.edges.map((e) => ({ ...structuredClone(e), id: crypto.randomUUID(), source: map.get(e.source)!, target: map.get(e.target)!, selected: false }));
-    useBoard.getState().addElements(nodes, edges);
-    clipboard.current = { nodes: nodes.map((n) => ({ ...n, selected: false })), edges };
+  /** Cola o conteúdo copiado; com `at`, o conjunto fica centralizado nesse ponto (coordenadas de tela). */
+  const paste = useCallback(
+    (at?: { x: number; y: number } | null) => {
+      const clip = clipboard.current;
+      if (!clip?.nodes.length) return;
+      const map = new Map(clip.nodes.map((n) => [n.id, crypto.randomUUID()]));
+
+      // deslocamento: para o ponteiro do mouse, ou +30px se o mouse não está no canvas
+      let dx = 30;
+      let dy = 30;
+      if (at) {
+        const tops = clip.nodes.filter((n) => !n.parentId || !map.has(n.parentId));
+        const xs = tops.flatMap((n) => [n.position.x, n.position.x + (n.measured?.width ?? n.width ?? 0)]);
+        const ys = tops.flatMap((n) => [n.position.y, n.position.y + (n.measured?.height ?? n.height ?? 0)]);
+        const target = rf.screenToFlowPosition(at);
+        dx = target.x - (Math.min(...xs) + Math.max(...xs)) / 2;
+        dy = target.y - (Math.min(...ys) + Math.max(...ys)) / 2;
+      }
+
+      const nodes = clip.nodes.map((n) => ({
+        ...structuredClone(n),
+        id: map.get(n.id)!,
+        parentId: n.parentId ? map.get(n.parentId) ?? undefined : undefined,
+        position: n.parentId && map.has(n.parentId) ? n.position : { x: Math.round(n.position.x + dx), y: Math.round(n.position.y + dy) },
+      }));
+      const edges = clip.edges.map((e) => ({ ...structuredClone(e), id: crypto.randomUUID(), source: map.get(e.source)!, target: map.get(e.target)!, selected: false }));
+      useBoard.getState().addElements(nodes, edges);
+      // colar de novo (sem mover o mouse) empilha a próxima cópia ao lado desta
+      clipboard.current = { nodes: nodes.map((n) => ({ ...n, selected: false })), edges };
+    },
+    [rf],
+  );
+
+  /** Lê conteúdo do MyFineDraw de um texto da área de transferência. */
+  const loadClipboardText = useCallback((text: string | undefined) => {
+    if (!text?.startsWith(MFD_CLIPBOARD)) return false;
+    try {
+      const clip = JSON.parse(text.slice(MFD_CLIPBOARD.length));
+      if (!Array.isArray(clip.nodes) || !Array.isArray(clip.edges)) return false;
+      // se for o mesmo conteúdo copiado aqui, mantém o deslocamento acumulado do colar anterior
+      if (clipboard.current && JSON.stringify(clipboard.current.nodes.map((n) => n.data)) === JSON.stringify(clip.nodes.map((n: Node) => n.data))) return true;
+      clipboard.current = clip;
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const group = useCallback(() => {
@@ -329,29 +388,99 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
       const s = useBoard.getState();
       if (mod && k === 'z' && !e.shiftKey) return e.preventDefault(), s.undo();
       if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) return e.preventDefault(), s.redo();
-      if (mod && k === 'c') return void copy();
+      // Ctrl+C / Ctrl+X / Ctrl+V: o foco vai por um instante para um campo oculto, assim o
+      // navegador dispara os eventos nativos "copy"/"paste" — que leem e gravam a área de
+      // transferência do sistema SEM pedir permissão (funciona entre abas e janelas).
+      if (mod && (k === 'c' || k === 'x')) {
+        if (!s.nodes.some((n) => n.selected)) return;
+        cutAfterCopy = k === 'x';
+        pendingCopy = true;
+        armClipboardField(true);
+        // rede de segurança: se o "copy" nativo não vier, copia pela API e devolve o foco
+        setTimeout(() => {
+          if (!pendingCopy) return;
+          pendingCopy = false;
+          restoreFocus();
+          if (copy() && cutAfterCopy) useBoard.getState().deleteSelected();
+          cutAfterCopy = false;
+        }, 150);
+        return; // não chama preventDefault: o navegador precisa executar o copiar
+      }
       if (mod && k === 'd') return e.preventDefault(), copy() && paste();
+      if (mod && k === 'v') {
+        pendingPaste = true;
+        armClipboardField(false);
+        // rede de segurança: se o navegador não disparar "paste", usa a cópia interna
+        setTimeout(() => {
+          if (!pendingPaste) return;
+          pendingPaste = false;
+          restoreFocus();
+          paste(pointer.current);
+        }, 150);
+        return;
+      }
       if (mod && k === 'g') return e.preventDefault(), e.shiftKey ? ungroup() : group();
       if (mod && k === '0') return e.preventDefault(), rf.fitView({ duration: 200 });
       if (mod && k === 'a') return e.preventDefault(), rf.setNodes((ns) => ns.map((n) => ({ ...n, selected: true })));
       if (e.key === '?') return e.preventDefault(), setHelpOpen(true);
       if (!mod && !e.altKey && keys[k]) return e.preventDefault(), keys[k]();
     };
-    // Ctrl+V: imagem da área de transferência ou elementos copiados
-    const onPaste = (e: ClipboardEvent) => {
-      if (isTyping(e.target)) return;
-      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
-      e.preventDefault();
-      if (files.length) uploadFiles(files);
-      else paste();
+    let pendingPaste = false;
+    let pendingCopy = false;
+    let cutAfterCopy = false;
+    let returnFocus: HTMLElement | null = null;
+
+    /** Foca o campo oculto; para copiar, deixa um texto selecionado (o navegador exige seleção). */
+    const armClipboardField = (forCopy: boolean) => {
+      const field = clipboardField.current;
+      if (!field) return;
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      field.value = forCopy ? ' ' : '';
+      field.focus({ preventScroll: true });
+      if (forCopy) field.select();
     };
+    const restoreFocus = () => {
+      clipboardField.current?.blur();
+      returnFocus?.focus?.({ preventScroll: true });
+      returnFocus = null;
+    };
+    const fromOurField = (t: EventTarget | null) => t === clipboardField.current;
+
+    // "copy" nativo: grava os blocos selecionados como texto na área de transferência do sistema
+    const onCopy = (e: ClipboardEvent) => {
+      if (isTyping(e.target) && !fromOurField(e.target)) return;
+      pendingCopy = false;
+      const payload = copy(false);
+      if (!payload) return;
+      e.preventDefault();
+      e.clipboardData?.setData('text/plain', payload);
+      if (cutAfterCopy) useBoard.getState().deleteSelected();
+      cutAfterCopy = false;
+      setTimeout(restoreFocus);
+    };
+
+    // "paste" nativo: imagem copiada, blocos do MyFineDraw (de qualquer aba) ou a cópia interna
+    const onPaste = (e: ClipboardEvent) => {
+      if (isTyping(e.target) && !fromOurField(e.target)) return;
+      pendingPaste = false;
+      e.preventDefault();
+      setTimeout(restoreFocus);
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      const at = pointer.current ? rf.screenToFlowPosition(pointer.current) : undefined;
+      if (files.length) return void uploadFiles(files, at);
+      loadClipboardText(e.clipboardData?.getData('text/plain'));
+      paste(pointer.current);
+    };
+
     window.addEventListener('keydown', onKey);
+    window.addEventListener('copy', onCopy);
     window.addEventListener('paste', onPaste);
     return () => {
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('copy', onCopy);
       window.removeEventListener('paste', onPaste);
     };
-  }, [add, center, copy, paste, group, ungroup, uploadFiles, rf]);
+  }, [add, center, copy, paste, loadClipboardText, group, ungroup, uploadFiles, rf]);
 
   /* ---------- exportar ---------- */
   async function exportImage(kind: 'png' | 'svg') {
@@ -433,6 +562,11 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
       tool('document', <I.Doc />, 'Documento', flow('document')),
       tool('subprocess', <I.Sub />, 'Subprocesso', flow('subprocess')),
       tool('text', <I.Text />, 'Texto', flow('text'), 'T'),
+    ],
+    // UML
+    [
+      tool('actor', <I.Actor />, 'Ator (UML)', flow('actor')),
+      tool('usecase', <I.UseCase />, 'Caso de uso (UML)', flow('usecase')),
     ],
     [tool('table', <I.Table />, 'Tabela ER', createTableNode, 'E')],
     [
@@ -539,6 +673,8 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
         <div
           ref={wrapper}
           className="relative min-w-0 flex-1"
+          onPointerMove={(e) => (pointer.current = { x: e.clientX, y: e.clientY })}
+          onPointerLeave={() => (pointer.current = null)}
           onDragOver={(e) => {
             e.preventDefault();
             const internal = e.dataTransfer.types.includes(DND_TOOL) || e.dataTransfer.types.includes(DND_ASSET);
@@ -572,6 +708,16 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
           }}
         >
           <ErMarkers />
+          {/* campo oculto usado pelo Ctrl+C/V (ver armClipboardField) */}
+          <textarea
+            ref={clipboardField}
+            data-mfd-clipboard=""
+            aria-hidden
+            tabIndex={-1}
+            readOnly={false}
+            className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+            style={{ transform: 'translateX(-200vw)' }}
+          />
           <GuideLines guides={guides} />
           {dropHint && <div className="pointer-events-none absolute inset-2 z-[6] rounded-2xl border-2 border-dashed border-brand/60 bg-brand/5" />}
           {/* dock de ferramentas (vertical, à esquerda do canvas) */}
@@ -641,10 +787,15 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
 
           <CanvasMenu
             target={menuTarget}
-            canPaste={!!clipboard.current}
+            canPaste
             onCopy={copy}
             onDuplicate={() => copy() && paste()}
-            onPaste={paste}
+            onPaste={async () => {
+              try {
+                loadClipboardText(await navigator.clipboard.readText());
+              } catch {}
+              paste(menuPoint.current);
+            }}
             onGroup={group}
             onUngroup={ungroup}
             onSelectAll={() => rf.setNodes((ns) => ns.map((n) => ({ ...n, selected: true })))}
@@ -653,13 +804,36 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
           <div className="absolute inset-0">
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={displayEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodesChange={handleNodesChange}
             onNodeDragStop={() => setGuides({})}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={(event, state) => {
+              // soltou fora de um ponto de conexão: se caiu sobre um bloco, liga na borda mais próxima
+              if (state.isValid || !state.fromNode) return;
+              const pt = 'changedTouches' in event ? event.changedTouches[0] : event;
+              const hit = document
+                .elementsFromPoint(pt.clientX, pt.clientY)
+                .map((el) => el.closest('.react-flow__node'))
+                .find((el): el is HTMLElement => !!el && !el.classList.contains('react-flow__node-group'));
+              const targetId = hit?.dataset.id;
+              if (!targetId || targetId === state.fromNode.id) return;
+              const target = rf.getInternalNode(targetId);
+              if (!target) return;
+              // relacionamentos ER continuam ligando coluna a coluna
+              if (state.fromNode.type === 'erTable' && target.type === 'erTable') return;
+              const anchor = projectAnchor(target, rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }));
+              useBoard.getState().connectAnchored({
+                source: state.fromNode.id,
+                sourceHandle: state.fromHandle?.id ?? null,
+                target: targetId,
+                targetHandle: target.type === 'erTable' ? null : handleFor(anchor),
+                targetAnchor: anchor,
+              });
+            }}
             onReconnect={onReconnect}
             reconnectRadius={12}
             onNodeContextMenu={(_, n) => {
@@ -678,7 +852,10 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
                 edges: s.edges.map((x) => (x.selected !== (x.id === e.id) ? { ...x, selected: x.id === e.id } : x)),
               }));
             }}
-            onPaneContextMenu={() => setMenuTarget({ kind: 'pane' })}
+            onPaneContextMenu={(e) => {
+              menuPoint.current = { x: e.clientX, y: e.clientY };
+              setMenuTarget({ kind: 'pane' });
+            }}
             onSelectionContextMenu={(_, sel) => sel[0] && setMenuTarget({ kind: 'node', id: sel[0].id })}
             onMoveEnd={(_, vp) => (viewport.current = vp)}
             connectionMode={ConnectionMode.Loose}

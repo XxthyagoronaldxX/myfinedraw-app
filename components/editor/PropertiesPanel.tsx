@@ -1,7 +1,7 @@
 'use client';
 
-import { Edge, MarkerType, Node } from '@xyflow/react';
-import { ArrowDown, ArrowUp, MousePointerClick, Plus, X } from 'lucide-react';
+import { Edge, Node } from '@xyflow/react';
+import { ArrowDown, ArrowLeftRight, ArrowUp, MousePointerClick, Plus, Undo2, X } from 'lucide-react';
 import { useId } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { FlexEdgeData } from './edgeGeometry';
 import { ErColumn, newColumn, STICKY_COLORS } from './factory';
 import SqlTypeCombobox from './SqlTypeCombobox';
 import { useBoard } from './store';
@@ -21,6 +22,8 @@ const SHAPES = [
   ['document', 'Documento'],
   ['subprocess', 'Subprocesso'],
   ['text', 'Texto livre'],
+  ['actor', 'Ator (UML)'],
+  ['usecase', 'Caso de uso (UML)'],
 ];
 
 /* ---------- campos padronizados (shadcn Field) ---------- */
@@ -78,6 +81,11 @@ function SelectField({ label, value, options, onChange }: { label: string; value
 function ColorField({ label, value, onChange, allowTransparent = true }: { label: string; value: string; onChange: (v: string) => void; allowTransparent?: boolean }) {
   const id = useId();
   const transparent = value === 'transparent';
+  // vazio = cor do tema (claro/escuro); o seletor nativo precisa de um hex válido
+  const auto = !value;
+  const swatch = transparent ? 'repeating-conic-gradient(var(--mfd-line) 0 25%, transparent 0 50%) 0 0/8px 8px' : auto ? 'var(--mfd-ink)' : value;
+  const caption = transparent ? 'nenhum' : auto ? 'tema' : value;
+  const pickerValue = transparent || auto ? '#888888' : value;
   return (
     <Field orientation="horizontal" className="justify-between gap-2">
       <FieldLabel htmlFor={id} className="font-normal text-muted-foreground">{label}</FieldLabel>
@@ -94,15 +102,22 @@ function ColorField({ label, value, onChange, allowTransparent = true }: { label
         )}
         <label
           className="relative flex h-8 w-24 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-1.5 shadow-xs focus-within:ring-[3px] focus-within:ring-ring/50"
-          title={value}
+          title={auto ? 'Cor do tema (muda no claro/escuro)' : value}
         >
-          <span
-            className="h-5 w-5 shrink-0 rounded"
-            style={{ background: transparent ? 'repeating-conic-gradient(var(--mfd-line) 0 25%, transparent 0 50%) 0 0/8px 8px' : value }}
-          />
-          <span className="truncate font-mono text-[11px] uppercase text-ink-soft">{transparent ? 'nenhum' : value}</span>
-          <input id={id} type="color" className="absolute inset-0 cursor-pointer opacity-0" value={transparent ? '#ffffff' : value} onChange={(e) => onChange(e.target.value)} />
+          <span className="h-5 w-5 shrink-0 rounded border border-line" style={{ background: swatch }} />
+          <span className="truncate font-mono text-[11px] uppercase text-ink-soft">{caption}</span>
+          <input id={id} type="color" className="absolute inset-0 cursor-pointer opacity-0" value={pickerValue} onChange={(e) => onChange(e.target.value)} />
         </label>
+        {!auto && !transparent && (
+          <button
+            type="button"
+            title="Voltar à cor do tema"
+            onClick={() => onChange('')}
+            className="h-8 rounded-md border border-input px-1.5 font-mono text-[10px] text-muted-foreground transition hover:bg-accent"
+          >
+            A
+          </button>
+        )}
       </div>
     </Field>
   );
@@ -278,10 +293,25 @@ function TablePanel({ node }: { node: Node }) {
   );
 }
 
+const MARKERS = [
+  ['none', 'Nenhuma'],
+  ['arrow', 'Seta cheia ▶'],
+  ['open', 'Seta aberta ›'],
+  ['circle', 'Círculo ●'],
+  ['diamond', 'Losango ◆'],
+] as const;
+
 function EdgePanel({ edge }: { edge: Edge }) {
   const { updateEdge, updateEdgeData } = useBoard();
   const isEr = edge.type === 'erRelation';
-  const color = (edge.style?.stroke as string) ?? '#8a8473';
+  const d = (edge.data ?? {}) as FlexEdgeData;
+  // linhas antigas guardavam tipo/cor/seta fora de data: lê com fallback
+  const lineType = d.lineType ?? (edge.type === 'straight' || edge.type === 'default' ? edge.type : 'smoothstep');
+  const color = d.color ?? (edge.style?.stroke as string) ?? '';
+  const endMarker = d.endMarker ?? (edge.type === 'flex' || edge.markerEnd ? 'arrow' : 'none');
+  const pointCount = d.points?.length ?? 0;
+  const set = (patch: Partial<FlexEdgeData>) => updateEdgeData(edge.id, patch);
+
   return (
     <div>
       <Section title={isEr ? 'Relacionamento' : 'Conector'}>
@@ -289,32 +319,79 @@ function EdgePanel({ edge }: { edge: Edge }) {
         {isEr ? (
           <SelectField
             label="Cardinalidade (origem : destino)"
-            value={(edge.data as any)?.cardinality ?? 'N:1'}
+            value={d.cardinality ?? 'N:1'}
             options={[['1:1', '1 : 1'], ['1:N', '1 : N'], ['N:1', 'N : 1'], ['N:N', 'N : N']]}
-            onChange={(cardinality) => updateEdgeData(edge.id, { cardinality })}
+            onChange={(cardinality) => set({ cardinality })}
           />
         ) : (
           <>
             <SelectField
               label="Tipo de linha"
-              value={edge.type ?? 'default'}
+              value={lineType}
               options={[['smoothstep', 'Ortogonal'], ['straight', 'Reta'], ['default', 'Curva']]}
-              onChange={(type) => updateEdge(edge.id, { type })}
+              onChange={(v) => set({ lineType: v as FlexEdgeData['lineType'] })}
             />
-            <ColorField
-              label="Cor"
-              value={color}
-              allowTransparent={false}
-              onChange={(stroke) => updateEdge(edge.id, { style: { ...edge.style, stroke }, markerEnd: edge.markerEnd ? { type: MarkerType.ArrowClosed, color: stroke } : undefined })}
-            />
-            <CheckField
-              label="Seta no destino"
-              checked={!!edge.markerEnd}
-              onChange={(v) => updateEdge(edge.id, { markerEnd: v ? { type: MarkerType.ArrowClosed, color } : undefined })}
-            />
-            <CheckField label="Tracejado animado" checked={!!edge.animated} onChange={(v) => updateEdge(edge.id, { animated: v })} />
+            <div className="grid grid-cols-2 gap-3">
+              <SelectField label="Início" value={d.startMarker ?? 'none'} options={MARKERS} onChange={(v) => set({ startMarker: v as FlexEdgeData['startMarker'] })} />
+              <SelectField label="Fim" value={endMarker} options={MARKERS} onChange={(v) => set({ endMarker: v as FlexEdgeData['endMarker'] })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <SelectField
+                label="Traço"
+                value={d.dash ?? 'solid'}
+                options={[['solid', 'Contínuo'], ['dashed', 'Tracejado'], ['dotted', 'Pontilhado']]}
+                onChange={(v) => set({ dash: v as FlexEdgeData['dash'] })}
+              />
+              <SelectField
+                label="Espessura"
+                value={String(d.width ?? 1.5)}
+                options={[['1', 'Fina'], ['1.5', 'Normal'], ['2.5', 'Média'], ['4', 'Grossa']]}
+                onChange={(v) => set({ width: Number(v) })}
+              />
+            </div>
+            <ColorField label="Cor" value={color} allowTransparent={false} onChange={(c) => set({ color: c || undefined })} />
+            <CheckField label="Fluxo animado" checked={!!edge.animated} onChange={(v) => updateEdge(edge.id, { animated: v })} />
           </>
         )}
+      </Section>
+
+      <Section title="Traçado">
+        <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
+          {lineType === 'smoothstep' || isEr ? (
+            <li>Arraste a <b>pílula</b> de um trecho para movê-lo; a linha continua em ângulos retos.</li>
+          ) : (
+            <li>Arraste um <b>quadradinho</b> no meio da linha para dobrar; duplo clique numa dobra a remove.</li>
+          )}
+          {!isEr && <li>Arraste uma <b>ponta</b> para qualquer ponto da borda de um bloco.</li>}
+          <li>Duplo clique na linha volta ao traçado automático.</li>
+        </ul>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn"
+            disabled={!pointCount && d.centerX === undefined && d.centerY === undefined}
+            onClick={() => set({ points: undefined, centerX: undefined, centerY: undefined })}
+          >
+            <Undo2 className="h-4 w-4" /> Traçado automático
+          </button>
+          {!isEr && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() =>
+                updateEdge(edge.id, {
+                  source: edge.target,
+                  target: edge.source,
+                  sourceHandle: edge.targetHandle,
+                  targetHandle: edge.sourceHandle,
+                  data: { ...d, sourceAnchor: d.targetAnchor, targetAnchor: d.sourceAnchor, points: d.points ? [...d.points].reverse() : undefined },
+                })
+              }
+            >
+              <ArrowLeftRight className="h-4 w-4" /> Inverter direção
+            </button>
+          )}
+        </div>
       </Section>
       <RightClickHint />
     </div>
