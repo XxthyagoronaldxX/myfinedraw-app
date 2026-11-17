@@ -17,6 +17,11 @@ export const Table = () => (
   </S>
 );
 export const Sticky = () => <S><path d="M5 4h14v10l-6 6H5Z" /><path d="M13 20v-6h6" /></S>;
+export const Code = () => (
+  <S>
+    <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />
+  </S>
+);
 export const Markdown = () => (
   <S>
     <rect x="2.5" y="5.5" width="19" height="13" rx="2" />

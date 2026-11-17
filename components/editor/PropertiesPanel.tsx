@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { CODE_LANGUAGES } from './code';
 import { FlexEdgeData } from './edgeGeometry';
 import { ErColumn, newColumn, STICKY_COLORS } from './factory';
 import SqlTypeCombobox from './SqlTypeCombobox';
@@ -223,6 +224,15 @@ function NodePanel({ node }: { node: Node }) {
       {node.type === 'markdown' && (
         <Section title="Markdown">
           <TextField label="Conteúdo" multiline rows={14} mono value={d.text} onChange={(text) => set({ text })} />
+        </Section>
+      )}
+
+      {node.type === 'code' && (
+        <Section title="Bloco de código">
+          <TextField label="Título" value={d.title ?? ''} placeholder="Ex.: src/api/eventos.ts" onChange={(title) => set({ title })} />
+          <SelectField label="Linguagem" value={d.language ?? 'auto'} options={CODE_LANGUAGES} onChange={(language) => set({ language })} />
+          <CheckField label="Números de linha" checked={d.lineNumbers !== false} onChange={(v) => set({ lineNumbers: v })} />
+          <TextField label="Código" multiline rows={12} mono value={d.code ?? ''} onChange={(code) => set({ code })} />
         </Section>
       )}
 

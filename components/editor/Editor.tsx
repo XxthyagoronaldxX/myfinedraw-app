@@ -31,6 +31,7 @@ import { edgeTypes, ErMarkers } from './edges';
 import {
   createFlowNode,
   createImageNode,
+  createCodeNode,
   createMarkdownNode,
   createStickyNode,
   createTableNode,
@@ -380,6 +381,7 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
       e: () => add(createTableNode(center())),
       n: () => add(createStickyNode(center())),
       m: () => add(createMarkdownNode(center())),
+      k: () => add(createCodeNode(center())),
     };
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
@@ -572,6 +574,7 @@ function EditorInner({ projectId, boardId }: { projectId: string; boardId: strin
     [
       tool('sticky', <I.Sticky />, 'Sticky note', createStickyNode, 'N'),
       tool('markdown', <I.Markdown />, 'Bloco Markdown', createMarkdownNode, 'M'),
+      tool('code', <I.Code />, 'Bloco de código', createCodeNode, 'K'),
       { id: 'image', icon: <I.Image />, title: 'Enviar imagem', run: () => fileInput.current?.click() },
     ],
   ];

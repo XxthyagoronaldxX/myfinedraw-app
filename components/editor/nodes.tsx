@@ -1,11 +1,13 @@
 'use client';
 
 import { Handle, NodeProps, NodeResizer, Position } from '@xyflow/react';
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { assetUrl } from '@/lib/api';
+import { CODE_LANGUAGES, highlightCode, languageLabel } from './code';
 import { ErColumn, FlowShape, STICKY_COLORS } from './factory';
+import { formatCode, reindentBraces } from './format';
 import { useBoard } from './store';
 
 /* Handles nos 4 lados; com ConnectionMode.Loose qualquer um conecta com qualquer um. */
@@ -270,7 +272,200 @@ export const ImageNode = memo(function ImageNode({ id, data, selected }: NodePro
   );
 });
 
+/* ---------------- Bloco de código ---------------- */
+
+export const CodeNode = memo(function CodeNode({ id, data, selected }: NodeProps) {
+  const updateNodeData = useBoard((s) => s.updateNodeData);
+  const d = data as { code: string; language: string; lineNumbers?: boolean; title?: string };
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(d.code);
+  const [copied, setCopied] = useState(false);
+  const [fmtMsg, setFmtMsg] = useState<string | null>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const shown = editing ? draft : d.code;
+  const { html, detected } = useMemo(() => highlightCode(shown, d.language), [shown, d.language]);
+  const lines = shown.split('\n').length;
+  const showNumbers = d.lineNumbers !== false;
+
+  const startEdit = () => {
+    setDraft(d.code);
+    setEditing(true);
+  };
+  const commit = (value: string) => {
+    setEditing(false);
+    if (value !== d.code) updateNodeData(id, { code: value });
+  };
+
+  /** Troca o texto do textarea e reposiciona o cursor depois do render. */
+  const setText = (value: string, a: number, b = a) => {
+    setDraft(value);
+    requestAnimationFrame(() => {
+      const el = area.current;
+      if (el) {
+        el.selectionStart = a;
+        el.selectionEnd = b;
+      }
+    });
+  };
+
+  const format = async () => {
+    const src = editing ? draft : d.code;
+    const lang = d.language === 'auto' ? detected ?? 'plaintext' : d.language;
+    let out: string;
+    try {
+      out = await formatCode(src, lang);
+      setFmtMsg('Formatado ✓');
+    } catch {
+      out = reindentBraces(src); // sintaxe inválida para o Prettier: ao menos reindenta
+      setFmtMsg('Reindentado');
+    }
+    setTimeout(() => setFmtMsg(null), 1400);
+    if (editing) setText(out, 0);
+    else if (out !== d.code) updateNodeData(id, { code: out });
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(d.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {}
+  };
+
+  return (
+    <div
+      className={`mfd-code flex h-full w-full flex-col overflow-hidden rounded-lg border shadow-soft ${selected ? 'border-brand' : 'border-white/10'}`}
+    >
+      <NodeResizer isVisible={selected} minWidth={200} minHeight={90} handleClassName="!h-2 !w-2 !bg-surface !border-brand" />
+
+      {/* cabeçalho estilo editor: título, linguagem e copiar */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-white/10 bg-black/20 px-3 py-1.5">
+        <span className="flex gap-1" aria-hidden>
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+        </span>
+        {d.title ? <span className="truncate font-mono text-[11px] text-white/70">{d.title}</span> : null}
+        <select
+          aria-label="Linguagem"
+          title="Linguagem"
+          className="nodrag ml-auto max-w-[140px] cursor-pointer rounded bg-transparent px-1 py-0.5 font-mono text-[11px] text-white/70 outline-none hover:bg-white/10 focus:bg-white/10 [&>option]:bg-[#0d1321]"
+          value={d.language}
+          onChange={(e) => updateNodeData(id, { language: e.target.value })}
+        >
+          {CODE_LANGUAGES.map(([v, l]) => (
+            <option key={v} value={v}>
+              {v === 'auto' && detected ? `Auto (${languageLabel(detected)})` : l}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault() /* não tira o foco do textarea */}
+          onClick={format}
+          className="nodrag rounded px-1.5 py-0.5 font-mono text-[11px] text-white/70 hover:bg-white/10 hover:text-white"
+          title="Formatar código (Shift+Alt+F)"
+        >
+          {fmtMsg ?? 'Formatar'}
+        </button>
+        <button
+          type="button"
+          onClick={copy}
+          className="nodrag rounded px-1.5 py-0.5 font-mono text-[11px] text-white/70 hover:bg-white/10 hover:text-white"
+          title="Copiar código"
+        >
+          {copied ? 'Copiado ✓' : 'Copiar'}
+        </button>
+      </div>
+
+      {/* mesma visualização ao ler e ao editar: o textarea transparente fica sobre o código destacado */}
+      <div
+        className={`nowheel min-h-0 flex-1 overflow-auto ${editing ? 'nodrag cursor-text' : ''}`}
+        onDoubleClick={editing ? undefined : startEdit}
+        title={editing ? undefined : 'Duplo clique para editar'}
+      >
+        <div className="flex min-h-full min-w-max py-3 font-mono text-[12.5px] leading-[1.6]">
+          {showNumbers && (
+            <div className="select-none pl-3 pr-3 text-right text-white/25" aria-hidden>
+              {Array.from({ length: lines }, (_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
+            </div>
+          )}
+          <div className={`relative grid flex-1 ${showNumbers ? 'pr-4' : 'px-3'}`}>
+            <pre className="m-0 whitespace-pre [grid-area:1/1]" aria-hidden={editing}>
+              {/* o highlight.js escapa o código; o HTML contém só <span class="hljs-…"> */}
+              <code className="hljs" dangerouslySetInnerHTML={{ __html: (html || ' ') + (shown.endsWith('\n') ? ' ' : '') }} />
+            </pre>
+            {editing && (
+              <textarea
+                ref={area}
+                autoFocus
+                spellCheck={false}
+                wrap="off"
+                aria-label="Editar código"
+                className="m-0 h-full w-full resize-none overflow-hidden whitespace-pre border-0 bg-transparent p-0 font-mono text-[12.5px] leading-[1.6] text-transparent caret-white outline-none [grid-area:1/1]"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={(e) => commit(e.target.value)}
+                onKeyDown={(e) => {
+                  const el = e.currentTarget;
+                  const { selectionStart: a, selectionEnd: b, value } = el;
+                  const lineStart = value.lastIndexOf('\n', a - 1) + 1;
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setEditing(false); // descarta
+                  } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    commit(value);
+                  } else if (e.code === 'KeyF' && e.shiftKey && e.altKey) {
+                    e.preventDefault();
+                    format();
+                  } else if (e.key === 'Enter') {
+                    // mantém a indentação da linha atual (+1 nível depois de { ( [)
+                    e.preventDefault();
+                    const indent = /^[ \t]*/.exec(value.slice(lineStart, a))![0];
+                    const extra = /[{([]\s*$/.test(value.slice(lineStart, a)) ? '  ' : '';
+                    const ins = '\n' + indent + extra;
+                    setText(value.slice(0, a) + ins + value.slice(b), a + ins.length);
+                  } else if (e.key === 'Tab') {
+                    // Tab / Shift+Tab indentam ou recuam as linhas selecionadas
+                    e.preventDefault();
+                    if (a === b && !e.shiftKey) {
+                      setText(value.slice(0, a) + '  ' + value.slice(b), a + 2);
+                      return;
+                    }
+                    const end = value.indexOf('\n', b - (b > a && value[b - 1] === '\n' ? 1 : 0));
+                    const blockEnd = end === -1 ? value.length : end;
+                    const block = value.slice(lineStart, blockEnd).split('\n');
+                    let firstDelta = 0;
+                    let total = 0;
+                    const next = block.map((l, i) => {
+                      if (e.shiftKey) {
+                        const rm = /^ {1,2}/.exec(l)?.[0].length ?? 0;
+                        if (i === 0) firstDelta = -rm;
+                        total -= rm;
+                        return l.slice(rm);
+                      }
+                      if (i === 0) firstDelta = 2;
+                      total += 2;
+                      return '  ' + l;
+                    });
+                    setText(value.slice(0, lineStart) + next.join('\n') + value.slice(blockEnd), Math.max(lineStart, a + firstDelta), b + total);
+                  }
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      <SideHandles />
+    </div>
+  );
+});
+
 export const nodeTypes = {
+  code: CodeNode,
   flow: FlowNode,
   erTable: ErTableNode,
   sticky: StickyNode,

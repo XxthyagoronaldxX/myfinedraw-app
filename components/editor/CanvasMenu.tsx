@@ -19,6 +19,7 @@ const NODE_LABELS: Record<string, string> = {
   erTable: 'Tabela',
   sticky: 'Nota',
   markdown: 'Markdown',
+  code: 'Bloco de código',
   image: 'Imagem',
   group: 'Grupo',
 };

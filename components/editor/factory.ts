@@ -1,4 +1,5 @@
 import type { Node, XYPosition } from '@xyflow/react';
+import { SAMPLE_CODE } from './code';
 
 export type FlowShape = 'terminal' | 'process' | 'decision' | 'io' | 'document' | 'subprocess' | 'text' | 'actor' | 'usecase';
 
@@ -92,6 +93,17 @@ export function createStickyNode(center: XYPosition): Node {
     width: 180,
     height: 180,
     data: { text: 'Nova nota', color: 'yellow' },
+  };
+}
+
+export function createCodeNode(center: XYPosition): Node {
+  return {
+    id: id(),
+    type: 'code',
+    position: { x: center.x - 220, y: center.y - 120 },
+    width: 440,
+    height: 240,
+    data: { code: SAMPLE_CODE, language: 'typescript', lineNumbers: true, title: '' },
   };
 }
 

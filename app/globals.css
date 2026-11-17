@@ -189,3 +189,46 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--mfd-line-strong) transparent;
 }
+
+/* ---------------- bloco de código (fundo escuro nos dois temas, cores estilo GitHub Dark) ---------------- */
+.mfd-code {
+  background: #0d1321;
+  color: #e6edf3;
+}
+.mfd-code .hljs-comment,
+.mfd-code .hljs-quote { color: #8b949e; font-style: italic; }
+.mfd-code .hljs-keyword,
+.mfd-code .hljs-selector-tag,
+.mfd-code .hljs-meta .hljs-keyword,
+.mfd-code .hljs-doctag { color: #ff7b72; }
+.mfd-code .hljs-string,
+.mfd-code .hljs-regexp,
+.mfd-code .hljs-addition,
+.mfd-code .hljs-meta .hljs-string { color: #a5d6ff; }
+.mfd-code .hljs-number,
+.mfd-code .hljs-literal,
+.mfd-code .hljs-symbol,
+.mfd-code .hljs-bullet,
+.mfd-code .hljs-variable.constant_ { color: #79c0ff; }
+.mfd-code .hljs-title,
+.mfd-code .hljs-title.function_,
+.mfd-code .hljs-section { color: #d2a8ff; }
+.mfd-code .hljs-title.class_,
+.mfd-code .hljs-type,
+.mfd-code .hljs-built_in { color: #ffa657; }
+.mfd-code .hljs-attr,
+.mfd-code .hljs-attribute,
+.mfd-code .hljs-property,
+.mfd-code .hljs-selector-class,
+.mfd-code .hljs-selector-id { color: #79c0ff; }
+.mfd-code .hljs-name,
+.mfd-code .hljs-tag { color: #7ee787; }
+.mfd-code .hljs-params,
+.mfd-code .hljs-subst { color: #e6edf3; }
+.mfd-code .hljs-meta { color: #79c0ff; }
+.mfd-code .hljs-deletion { color: #ffa198; background: rgb(248 81 73 / 0.12); }
+.mfd-code .hljs-addition { background: rgb(46 160 67 / 0.15); }
+.mfd-code .hljs-emphasis { font-style: italic; }
+.mfd-code .hljs-strong { font-weight: 600; }
+.mfd-code textarea::selection,
+.mfd-code pre ::selection { background: rgb(56 139 253 / 0.35); color: inherit; }

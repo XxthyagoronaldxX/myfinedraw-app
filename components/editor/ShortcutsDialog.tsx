@@ -13,6 +13,7 @@ const GROUPS: { title: string; items: [string[], string][] }[] = [
       [['E'], 'Tabela ER'],
       [['N'], 'Sticky note'],
       [['M'], 'Bloco Markdown'],
+      [['K'], 'Bloco de código'],
       [['Ctrl', 'V'], 'Colar imagem da área de transferência'],
     ],
   },
@@ -49,6 +50,8 @@ const GROUPS: { title: string; items: [string[], string][] }[] = [
       [['Enter'], 'Confirmar (campos de uma linha)'],
       [['Ctrl', 'Enter'], 'Confirmar (textos de várias linhas)'],
       [['Esc'], 'Cancelar edição'],
+      [['Shift', 'Alt', 'F'], 'Formatar bloco de código'],
+      [['Shift', 'Tab'], 'Recuar linhas no bloco de código'],
     ],
   },
   {
